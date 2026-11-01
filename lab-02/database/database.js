@@ -1,35 +1,44 @@
 
-const sqlite3 = require("sqlite3").verbose();
+require("dotenv").config();
+
 const path = require("path");
+const { pathToFileURL } = require("url");
+const { createClient } = require("@libsql/client");
 
-// Database file location
-const dbPath = path.join(__dirname, "campus.db");
+const useTurso = process.env.DATABASE_MODE === "turso";
 
-// Connect to SQLite database
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error("Database connection failed:", err.message);
-    } else {
-        console.log("Connected to CampusTrack SQLite database");
-    }
-});
+let db;
 
-// Create equipment table
-db.run(`
-    CREATE TABLE IF NOT EXISTS equipment (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        category TEXT NOT NULL,
-        quantity INTEGER NOT NULL CHECK(quantity >= 0),
-        location TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'Available'
-    )
-`, (err) => {
-    if (err) {
-        console.error("Table creation failed:", err.message);
-    } else {
-        console.log("Equipment table created successfully");
-    }
-});
+if (useTurso) {
+  if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
+    throw new Error("Turso database credentials are missing.");
+  }
 
-module.exports = db;
+  db = createClient({
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN
+  });
+
+  console.log("Using Turso cloud database");
+} else {
+  const localDatabasePath = path.join(__dirname, "campus.db");
+
+  db = createClient({
+    url: pathToFileURL(localDatabasePath).href
+  });
+
+  console.log("Using local SQLite database");
+}
+
+const dbReady = db.execute(`
+  CREATE TABLE IF NOT EXISTS equipment (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    quantity INTEGER NOT NULL CHECK(quantity >= 0),
+    location TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Available'
+  )
+`);
+
+module.exports = { db, dbReady };

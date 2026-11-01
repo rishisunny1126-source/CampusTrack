@@ -1,43 +1,56 @@
 
 const express = require("express");
-const db = require("./database/database");
-
-const equipmentRoutes = require("./routes/equipment");
-
 const app = express();
 
-const PORT = 3001;
+const { db, dbReady } = require("./database/database");
+const equipmentRoutes = require("./routes/equipment");
 
-// Middleware
 app.use(express.json());
 
-// Home route
+// API welcome route
 app.get("/", (req, res) => {
-    res.send("Welcome to CampusTrack Equipment Management API!");
+  res.json({
+    message: "Welcome to CampusTrack API!",
+    version: "1.0.0"
+  });
 });
 
-// Database status
-app.get("/api/status", (req, res) => {
-    db.get("SELECT 1 AS connected", (err, row) => {
-        if (err) {
-            return res.status(500).json({
-                status: "error",
-                message: "Database connection failed"
-            });
-        }
+// API status
+app.get("/api/status", async (req, res) => {
+  try {
+    await dbReady;
+    await db.execute("SELECT 1 AS connected");
 
-        res.json({
-            status: "success",
-            message: "CampusTrack API is running",
-            database: "connected"
-        });
+    res.json({
+      status: "Online",
+      database: "Connected"
     });
+  } catch (error) {
+    res.status(500).json({
+      status: "Error",
+      database: "Disconnected"
+    });
+  }
 });
 
-// Equipment routes
+// Equipment CRUD routes
 app.use("/api/equipment", equipmentRoutes);
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`CampusTrack API running at http://localhost:${PORT}`);
+// Handle unknown routes
+app.use((req, res) => {
+  res.status(404).json({
+    message: "API route not found"
+  });
 });
+
+// Export Express application for Vercel
+module.exports = app;
+
+// Start local server only when executed directly
+if (require.main === module) {
+  const PORT = process.env.PORT || 3001;
+
+  app.listen(PORT, () => {
+    console.log(`CampusTrack API running on port ${PORT}`);
+  });
+}

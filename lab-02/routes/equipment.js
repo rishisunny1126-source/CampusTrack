@@ -2,182 +2,132 @@
 const express = require("express");
 const router = express.Router();
 
-const db = require("../database/database");
+const { db, dbReady } = require("../database/database");
 
-// CREATE - Add new equipment
-router.post("/", (req, res) => {
+// CREATE equipment
+router.post("/", async (req, res) => {
+  try {
+    await dbReady;
+
     const { name, category, quantity, location, status } = req.body;
-
-    if (!name || !category || quantity === undefined || !location) {
-        return res.status(400).json({
-            message: "Please provide all required equipment details"
-        });
-    }
-
-    if (!Number.isInteger(quantity) || quantity < 0) {
-        return res.status(400).json({
-            message: "Quantity must be a non-negative integer"
-        });
-    }
-
-    const sql = `
-        INSERT INTO equipment (name, category, quantity, location, status)
-        VALUES (?, ?, ?, ?, ?)
-    `;
-
-    db.run(
-        sql,
-        [name, category, quantity, location, status || "Available"],
-        function (err) {
-            if (err) {
-                return res.status(500).json({
-                    message: "Failed to add equipment"
-                });
-            }
-
-            res.status(201).json({
-                message: "Equipment added successfully",
-                id: this.lastID
-            });
-        }
-    );
-});
-
-// READ - Get all equipment
-router.get("/", (req, res) => {
-    const sql = "SELECT * FROM equipment";
-
-    db.all(sql, [], (err, rows) => {
-        if (err) {
-            return res.status(500).json({
-                message: "Failed to retrieve equipment"
-            });
-        }
-
-        res.status(200).json(rows);
-    });
-});
-
-// READ - Get equipment by ID
-router.get("/:id", (req, res) => {
-    const id = Number(req.params.id);
-
-    if (!Number.isInteger(id) || id <= 0) {
-        return res.status(400).json({
-            message: "Invalid equipment ID"
-        });
-    }
-
-    db.get(
-        "SELECT * FROM equipment WHERE id = ?",
-        [id],
-        (err, row) => {
-            if (err) {
-                return res.status(500).json({
-                    message: "Failed to retrieve equipment"
-                });
-            }
-
-            if (!row) {
-                return res.status(404).json({
-                    message: "Equipment not found"
-                });
-            }
-
-            res.status(200).json(row);
-        }
-    );
-});
-
-// UPDATE - Modify equipment
-router.put("/:id", (req, res) => {
-    const id = Number(req.params.id);
-    const { name, category, quantity, location, status } = req.body;
-
-    if (!Number.isInteger(id) || id <= 0) {
-        return res.status(400).json({
-            message: "Invalid equipment ID"
-        });
-    }
 
     if (
-        !name ||
-        !category ||
-        quantity === undefined ||
-        !location ||
-        !status
+      !name || !category || quantity === undefined ||
+      !location || !Number.isInteger(quantity) || quantity < 0
     ) {
-        return res.status(400).json({
-            message: "Please provide all equipment details"
-        });
+      return res.status(400).json({
+        message: "Please provide valid equipment details"
+      });
     }
 
-    if (!Number.isInteger(quantity) || quantity < 0) {
-        return res.status(400).json({
-            message: "Quantity must be a non-negative integer"
-        });
-    }
+    const result = await db.execute({
+      sql: `INSERT INTO equipment
+            (name, category, quantity, location, status)
+            VALUES (?, ?, ?, ?, ?)`,
+      args: [name, category, quantity, location, status || "Available"]
+    });
 
-    const sql = `
-        UPDATE equipment
-        SET name = ?, category = ?, quantity = ?, location = ?, status = ?
-        WHERE id = ?
-    `;
-
-    db.run(
-        sql,
-        [name, category, quantity, location, status, id],
-        function (err) {
-            if (err) {
-                return res.status(500).json({
-                    message: "Failed to update equipment"
-                });
-            }
-
-            if (this.changes === 0) {
-                return res.status(404).json({
-                    message: "Equipment not found"
-                });
-            }
-
-            res.status(200).json({
-                message: "Equipment updated successfully"
-            });
-        }
-    );
+    res.status(201).json({
+      message: "Equipment added successfully",
+      id: Number(result.lastInsertRowid)
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 });
 
-// DELETE - Remove equipment
-router.delete("/:id", (req, res) => {
-    const id = Number(req.params.id);
+// READ all equipment
+router.get("/", async (req, res) => {
+  try {
+    await dbReady;
 
-    if (!Number.isInteger(id) || id <= 0) {
-        return res.status(400).json({
-            message: "Invalid equipment ID"
-        });
+    const result = await db.execute("SELECT * FROM equipment");
+
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// READ equipment by ID
+router.get("/:id", async (req, res) => {
+  try {
+    await dbReady;
+
+    const result = await db.execute({
+      sql: "SELECT * FROM equipment WHERE id = ?",
+      args: [req.params.id]
+    });
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        message: "Equipment not found"
+      });
     }
 
-    db.run(
-        "DELETE FROM equipment WHERE id = ?",
-        [id],
-        function (err) {
-            if (err) {
-                return res.status(500).json({
-                    message: "Failed to delete equipment"
-                });
-            }
+    res.json(result.rows[0]);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
 
-            if (this.changes === 0) {
-                return res.status(404).json({
-                    message: "Equipment not found"
-                });
-            }
+// UPDATE equipment
+router.put("/:id", async (req, res) => {
+  try {
+    await dbReady;
 
-            res.status(200).json({
-                message: "Equipment deleted successfully"
-            });
-        }
-    );
+    const { name, category, quantity, location, status } = req.body;
+
+    if (
+      !name || !category || quantity === undefined ||
+      !location || !status ||
+      !Number.isInteger(quantity) || quantity < 0
+    ) {
+      return res.status(400).json({
+        message: "Please provide valid equipment details"
+      });
+    }
+
+    const result = await db.execute({
+      sql: `UPDATE equipment
+            SET name = ?, category = ?, quantity = ?,
+                location = ?, status = ?
+            WHERE id = ?`,
+      args: [name, category, quantity, location, status, req.params.id]
+    });
+
+    if (result.rowsAffected === 0) {
+      return res.status(404).json({
+        message: "Equipment not found"
+      });
+    }
+
+    res.json({ message: "Equipment updated successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// DELETE equipment
+router.delete("/:id", async (req, res) => {
+  try {
+    await dbReady;
+
+    const result = await db.execute({
+      sql: "DELETE FROM equipment WHERE id = ?",
+      args: [req.params.id]
+    });
+
+    if (result.rowsAffected === 0) {
+      return res.status(404).json({
+        message: "Equipment not found"
+      });
+    }
+
+    res.json({ message: "Equipment deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 });
 
 module.exports = router;
